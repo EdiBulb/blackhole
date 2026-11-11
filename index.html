@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>블랙홀</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbit&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<style>
+  :root { --bg:#05060E; --text:#F4F4FB; --sub:#A5A8C8; --sub2:#C9CBE3; --violet:#7C3AED; --amber:#FFB86B; }
+  html, body { margin:0; padding:0; height:100%; background:var(--bg); overflow:hidden; color:var(--text);
+    font-family:'Noto Sans KR', -apple-system, sans-serif; touch-action:none; -webkit-user-select:none; user-select:none; }
+  .orbit { font-family:'Orbit', 'Noto Sans KR', sans-serif; font-weight:400; }
+  #stars { position:fixed; inset:0; }
+  #game { position:fixed; inset:0; }
+  .hidden { display:none !important; }
+
+  /* HUD */
+  #hud { position:fixed; top:0; left:0; right:0; padding:max(16px, env(safe-area-inset-top)) 18px 0;
+    display:flex; flex-direction:column; gap:10px; pointer-events:none; }
+  .hud-row { display:flex; align-items:center; justify-content:space-between; }
+  #stageName { font-size:24px; }
+  #stageNum { font-size:13px; color:var(--sub); margin-left:8px; }
+  .timer { display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:rgba(255,255,255,0.08); font-size:18px; }
+  .timer.low { color:#FCA5A5; background:rgba(239,68,68,0.18); }
+  .bar { height:6px; border-radius:3px; background:rgba(255,255,255,0.12); }
+  .bar > div { height:6px; border-radius:3px; background:var(--amber); width:0%; transition:width .15s; }
+  #effects { display:flex; gap:6px; min-height:28px; }
+  .chip { display:flex; align-items:center; gap:5px; padding:5px 10px; border-radius:999px; font-size:13px; }
+  .chip.blue { background:rgba(56,189,248,0.16); border:1px solid rgba(125,211,252,0.4); }
+  .chip.green { background:rgba(74,222,128,0.14); border:1px solid rgba(74,222,128,0.4); }
+  .chip.white { background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.3); }
+  #next { position:fixed; left:0; right:0; bottom:max(28px, env(safe-area-inset-bottom)); display:flex; justify-content:center; pointer-events:none; }
+  #next span { padding:8px 16px; border-radius:999px; background:rgba(5,6,14,0.75); border:1px solid rgba(255,255,255,0.12); font-size:13px; color:var(--sub2); }
+  #toast { position:fixed; left:0; right:0; top:34%; text-align:center; pointer-events:none; opacity:0; transition:opacity .25s; }
+  #toast.show { opacity:1; }
+  #toastSmall { margin:0; font-size:13px; letter-spacing:.1em; color:#FFD9A8; }
+  #toastBig { margin:4px 0 0; font-size:30px; text-shadow:0 2px 12px #05060E; }
+
+  /* 오버레이 화면 */
+  .screen { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; box-sizing:border-box;
+    padding:max(48px, env(safe-area-inset-top)) 28px max(32px, env(safe-area-inset-bottom)); background:rgba(5,6,14,0.88);
+    overflow-y:auto; text-align:center; }
+  .screen > * { max-width:400px; width:100%; }
+  .eyebrow { margin:0; font-size:13px; letter-spacing:.2em; color:var(--sub); font-weight:500; }
+  .screen h1 { margin:10px 0 0; line-height:1.1; }
+  .desc { margin:12px 0 0; font-size:16px; color:var(--sub2); }
+  .hero { position:relative; width:220px; height:220px; margin:18px auto 0; flex-shrink:0; }
+  .hero img { position:absolute; inset:0; width:100%; height:100%; }
+  .spin { animation:spin 10s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .card { margin-top:22px; display:flex; flex-direction:column; gap:12px; background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:18px 20px; box-sizing:border-box; text-align:left; }
+  .rule { display:flex; align-items:center; gap:14px; font-size:15px; }
+  .rule .ico { width:36px; height:36px; flex-shrink:0; display:flex; align-items:center; justify-content:center; position:relative; }
+  .ring-ok { position:absolute; inset:2px; border-radius:50%; border:1.5px solid rgba(165,243,252,0.85); box-shadow:0 0 10px 1px rgba(165,243,252,0.45); }
+  .ring-bad { position:absolute; inset:0; border-radius:50%; border:2.5px dashed #FB923C; }
+  .items { margin-top:12px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .item { display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 4px; border-radius:16px; background:rgba(56,189,248,0.1); font-size:13px; font-weight:500; }
+  .item small { font-size:11px; color:var(--sub); font-weight:400; }
+  .grow { flex-grow:1; min-height:16px; }
+  .best { margin:0 0 14px; font-size:14px; color:var(--sub); }
+  .best b { color:var(--text); font-weight:400; }
+  .btn { width:100%; height:58px; border:0; border-radius:29px; background:var(--violet); color:#fff;
+    font-family:'Noto Sans KR', sans-serif; font-size:18px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .btn:disabled { opacity:.5; }
+  .btn.ghost { background:transparent; border:1px solid rgba(255,255,255,0.25); height:54px; font-weight:500; font-size:17px; }
+  .btns { display:flex; flex-direction:column; gap:10px; }
+  .result { margin-top:24px; border-radius:28px; background:#0E1024; border:1px solid rgba(255,255,255,0.1); padding:24px; box-sizing:border-box;
+    display:flex; flex-direction:column; align-items:center; }
+  .result.win { border-color:rgba(255,184,107,0.45); }
+  .label { margin:0; font-size:14px; color:var(--sub); }
+  .bigval { margin:4px 0 0; font-size:52px; line-height:1.15; color:#FFE2B8; }
+  .dots { width:100%; margin-top:20px; display:flex; justify-content:space-between; }
+  .dot { width:14px; height:14px; border-radius:50%; box-sizing:border-box; border:2px solid rgba(255,255,255,0.3); }
+  .dot.on { background:var(--amber); border-color:var(--amber); }
+  .dots-label { width:100%; margin-top:8px; display:flex; justify-content:space-between; font-size:12px; color:var(--sub); }
+  .stats { width:100%; margin-top:20px; display:grid; gap:8px; }
+  .stat { padding:12px 10px; border-radius:16px; background:rgba(255,255,255,0.05); text-align:left; }
+  .stat p { margin:0; font-size:12px; color:var(--sub); }
+  .stat b { display:block; margin-top:4px; font-size:19px; font-weight:400; }
+  .newbest { margin:16px 0 0; font-size:14px; color:#FFB86B; font-weight:700; }
+
+  /* 공유 카드 */
+  #share { position:fixed; inset:0; background:rgba(0,0,0,0.85); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px; box-sizing:border-box; }
+  #share img { max-width:100%; max-height:70vh; border-radius:18px; -webkit-touch-callout:default; user-select:auto; -webkit-user-select:auto; }
+  #share p { margin:0; font-size:14px; color:var(--sub2); text-align:center; }
+  #share .btn { max-width:320px; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div id="game"></div>
+
+<div id="hud" class="hidden">
+  <div class="hud-row">
+    <div><span id="stageName" class="orbit">소행성</span><span id="stageNum">1 / 10 단계</span></div>
+    <div id="timer" class="timer orbit">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg>
+      <span id="time">3:00</span>
+    </div>
+  </div>
+  <div class="bar"><div id="barFill"></div></div>
+  <div id="effects"></div>
+</div>
+<div id="next" class="hidden"><span id="nextText"></span></div>
+<div id="toast"><p id="toastSmall"></p><p id="toastBig" class="orbit"></p></div>
+
+<!-- 시작 화면 -->
+<div id="start" class="screen">
+  <p class="eyebrow">SPACE MINI GAME</p>
+  <h1 class="orbit" style="font-size:56px; letter-spacing:.04em">블랙홀</h1>
+  <p class="desc">3분 안에 우주 전체를 삼켜라</p>
+  <div class="hero">
+    <img id="heroHalo" alt="">
+    <img id="heroArms" class="spin" alt="">
+    <svg viewBox="-100 -100 200 200" style="position:absolute; inset:0" aria-hidden="true">
+      <circle r="26" fill="none" stroke="#FFE9C2" stroke-width="6" opacity="0.6"/>
+      <circle r="24.5" fill="none" stroke="#fff" stroke-width="1.2"/>
+      <circle r="22.5" fill="#000"/>
+    </svg>
+  </div>
+  <div class="card">
+    <div class="rule">
+      <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFD9A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></div>
+      <span>화면을 누른 채 끌어서 이동</span>
+    </div>
+    <div class="rule">
+      <div class="ico"><div class="ring-ok"></div><img id="ruleEarth" width="24" height="24" alt=""></div>
+      <span><b style="color:#A5F3FC; font-weight:500">하늘색 테두리</b>는 삼킬 수 있어요</span>
+    </div>
+    <div class="rule">
+      <div class="ico"><div class="ring-bad"></div><img id="ruleJupiter" width="28" height="28" alt=""></div>
+      <span><b style="color:#FDBA74; font-weight:500">주황 점선</b>은 나보다 커요. 피하세요</span>
+    </div>
+  </div>
+  <div class="items">
+    <div class="item"><img id="itemMagnet" width="34" height="34" alt="">중력 증폭<small>범위 2배</small></div>
+    <div class="item"><img id="itemShield" width="34" height="34" alt="">보호막<small>한 번 막아줌</small></div>
+    <div class="item"><img id="itemFreeze" width="34" height="34" alt="">시간 정지<small>안 줄어듦</small></div>
+  </div>
+  <div class="grow"></div>
+  <p class="best" id="bestStart"></p>
+  <button class="btn" id="startBtn" disabled>불러오는 중…</button>
+</div>
+
+<!-- 결과 화면 -->
+<div id="over" class="screen hidden">
+  <div id="overHero" class="hero" style="width:110px; height:110px; margin-top:0">
+    <img id="overHalo" alt="">
+    <img id="overArms" class="spin" alt="">
+    <svg viewBox="-100 -100 200 200" style="position:absolute; inset:0" aria-hidden="true">
+      <circle r="24.5" fill="none" stroke="#fff" stroke-width="2"/>
+      <circle r="22.5" fill="#000"/>
+    </svg>
+  </div>
+  <p class="eyebrow" id="overEyebrow" style="margin-top:12px"></p>
+  <h1 class="orbit" id="overTitle" style="font-size:30px"></h1>
+  <p class="desc" id="overDesc" style="font-size:15px"></p>
+  <div class="result" id="resultBox">
+    <p class="label" id="resultLabel"></p>
+    <p class="bigval orbit" id="resultBig"></p>
+    <p class="label" id="resultSmall" style="font-size:13px; margin-top:2px"></p>
+    <div class="dots" id="dots"></div>
+    <div class="dots-label"><span>소행성</span><span>우주 전체</span></div>
+    <div class="stats" id="stats"></div>
+  </div>
+  <p id="bestOver" class="best" style="margin:16px 0 0"></p>
+  <div class="grow"></div>
+  <div class="btns">
+    <button class="btn" id="retryBtn">다시 하기</button>
+    <button class="btn ghost" id="shareBtn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+      결과 공유하기
+    </button>
+  </div>
+</div>
+
+<div id="share" class="hidden">
+  <img id="shareImg" alt="결과 카드">
+  <p>이미지를 길게 눌러 저장하거나 공유하세요</p>
+  <button class="btn ghost" id="shareClose">닫기</button>
+</div>
+
+<script>
+// ===== 튜닝 값 =====
+const CFG = {
+  startR: 12, dieRatio: 0.4, timeLimit: 180,
+  decayBase: 0.035, decayGrow: 0.00025, growK: 0.5,
+  hitShrink: 0.8, invulnMs: 900, objCount: 140, speed: 9, pullRange: 3,
+  itemEvery: 7, itemFirst: 4, itemLife: 12,
+  magnetSec: 5, magnetMult: 2, freezeSec: 5,
+};
+const STAGES = ['소행성','행성','항성','태양계','성운','은하','은하군','은하단','초은하단','우주 전체'];
+const STEP = 3, LAST = STAGES.length - 1;
+const $ = id => document.getElementById(id);
+
+// ================= 텍스처 (SVG로 그려서 캔버스로 굽기) =================
+const SHADE = `<radialGradient id="sh" cx="0.36" cy="0.34" r="0.78"><stop offset="0" stop-color="#fff" stop-opacity="0.2"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/><stop offset="0.78" stop-color="#000" stop-opacity="0.45"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient><clipPath id="cp"><circle cx="50" cy="50" r="48"/></clipPath>`;
+const svg = (vb, inner) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">${inner}</svg>`;
+const f2 = n => n.toFixed(2);
+let seed = 1;
+const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+
+function spiral(n, a, b, rMax, dir) {
+  let d = '';
+  const tMax = Math.log(rMax / a) / b;
+  for (let k = 0; k < n; k++) {
+    const off = k * Math.PI * 2 / n;
+    for (let t = 0; t <= tMax; t += 0.08) {
+      const r = a * Math.exp(b * t), th = dir * t + off;
+      d += (t === 0 ? 'M' : 'L') + f2(r * Math.cos(th)) + ' ' + f2(r * Math.sin(th)) + ' ';
+    }
+  }
+  return d;
+}
+function galaxyInner(s, idp) {
+  seed = s;
+  const arms = spiral(2, 6, 0.28, 90, 1);
+  let st = '', pk = '';
+  const tg = Math.log(90 / 6) / 0.28;
+  for (let a = 0; a < 2; a++) for (let i = 0; i < 150; i++) {
+    const tt = rnd() * tg, rr = 6 * Math.exp(0.28 * tt), jit = (rnd() - 0.5) * (4 + rr * 0.22);
+    const ang = tt + a * Math.PI + jit / Math.max(rr, 1);
+    const p = 'M' + f2((rr + jit) * Math.cos(ang)) + ' ' + f2((rr + jit) * Math.sin(ang)) + ' h0.01 ';
+    if (rnd() < 0.12) pk += p; else st += p;
+  }
+  for (let i = 0; i < 110; i++) { const r = Math.sqrt(rnd()) * 85, a = rnd() * Math.PI * 2; st += 'M' + f2(r * Math.cos(a)) + ' ' + f2(r * Math.sin(a)) + ' h0.01 '; }
+  return `<defs><radialGradient id="${idp}h"><stop offset="0" stop-color="#FFE8B0" stop-opacity="0.95"/><stop offset="0.12" stop-color="#FFD38A" stop-opacity="0.6"/><stop offset="0.4" stop-color="#8FA8FF" stop-opacity="0.16"/><stop offset="1" stop-color="#8FA8FF" stop-opacity="0"/></radialGradient>
+  <radialGradient id="${idp}c"><stop offset="0" stop-color="#fff"/><stop offset="0.4" stop-color="#FFE6A8" stop-opacity="0.8"/><stop offset="1" stop-color="#FFC870" stop-opacity="0"/></radialGradient>
+  <filter id="${idp}b4" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4"/></filter>
+  <filter id="${idp}b2" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2"/></filter></defs>
+  <circle r="98" fill="url(#${idp}h)"/>
+  <path d="${arms}" fill="none" stroke="#A9C1FF" stroke-width="16" stroke-linecap="round" opacity="0.22" filter="url(#${idp}b4)"/>
+  <path d="${arms}" fill="none" stroke="#DCE6FF" stroke-width="5" stroke-linecap="round" opacity="0.35" filter="url(#${idp}b2)"/>
+  <path d="${st}" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>
+  <path d="${pk}" fill="none" stroke="#FFB3C8" stroke-width="2.2" stroke-linecap="round" opacity="0.75"/>
+  <circle r="16" fill="url(#${idp}c)"/>`;
+}
+function star(c0, c1, c2, c3, glow, s) {
+  return svg('-70 -70 140 140', `<defs><radialGradient id="co"><stop offset="0.6" stop-color="${glow}" stop-opacity="0.7"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>
+  <radialGradient id="bd"><stop offset="0" stop-color="${c0}"/><stop offset="0.55" stop-color="${c1}"/><stop offset="0.86" stop-color="${c2}"/><stop offset="1" stop-color="${c3}"/></radialGradient>
+  <clipPath id="c"><circle r="50"/></clipPath>
+  <filter id="g" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.22" numOctaves="2" seed="${s}"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  3 0 0 0 -1.3"/></filter></defs>
+  <circle r="70" fill="url(#co)"/><circle r="50" fill="url(#bd)"/>
+  <rect x="-50" y="-50" width="100" height="100" filter="url(#g)" clip-path="url(#c)" opacity="0.3"/>`);
+}
+function bands(list, x, w) { return list.map(b => `<rect x="${x}" y="${b[0]}" width="${w}" height="${b[1]}" fill="${b[2]}"/>`).join(''); }
+const SAT_RINGS = `<ellipse rx="52" ry="14" fill="none" stroke="#B9A47C" stroke-width="3" opacity="0.6"/><ellipse rx="58" ry="16" fill="none" stroke="#E4D1A6" stroke-width="7" opacity="0.88"/><ellipse rx="64.5" ry="17.6" fill="none" stroke="#2A2418" stroke-width="1.4" opacity="0.5"/><ellipse rx="69" ry="19" fill="none" stroke="#C8AF84" stroke-width="5" opacity="0.78"/><ellipse rx="76" ry="21" fill="none" stroke="#9C8866" stroke-width="2" opacity="0.48"/>`;
+
+const TEX_DEFS = {
+  asteroid: { px: 128, sx: 2.7, svg: () => svg('0 0 100 100', `<defs>${SHADE}<filter id="r" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.3  0 0 0 0 0.3  0 0 0 0 0.3  5 0 0 0 -2.4"/></filter></defs>
+    <path id="p" d="M22 38 C26 18 52 10 70 20 C88 28 94 52 84 70 C74 88 46 92 30 82 C12 72 16 54 22 38Z" fill="#8A7F72"/>
+    <path d="M22 38 C26 18 52 10 70 20 C88 28 94 52 84 70 C74 88 46 92 30 82 C12 72 16 54 22 38Z" fill="#000" filter="url(#r)" opacity="0.5"/>
+    <circle cx="44" cy="40" r="6" fill="#6F665B"/><circle cx="66" cy="62" r="4" fill="#6F665B"/>
+    <path d="M22 38 C26 18 52 10 70 20 C88 28 94 52 84 70 C74 88 46 92 30 82 C12 72 16 54 22 38Z" fill="url(#sh)"/>`) },
+  moon: { px: 128, sx: 2.083, svg: () => svg('0 0 100 100', `<defs>${SHADE}<filter id="r" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.3  0 0 0 0 0.3  0 0 0 0 0.3  5 0 0 0 -2.4"/></filter></defs>
+    <circle cx="50" cy="50" r="48" fill="#A9A6A0"/><g clip-path="url(#cp)"><rect width="100" height="100" filter="url(#r)" opacity="0.55"/>
+    <circle cx="30" cy="40" r="6" fill="#8C8983" stroke="#C9C6C0"/><circle cx="60" cy="28" r="4" fill="#8C8983" stroke="#C9C6C0"/><circle cx="66" cy="62" r="8" fill="#8C8983" stroke="#C9C6C0"/><circle cx="40" cy="72" r="3.5" fill="#8C8983" stroke="#C9C6C0"/></g>
+    <circle cx="50" cy="50" r="48" fill="url(#sh)"/>`) },
+  mars: { px: 128, sx: 2.083, svg: () => svg('0 0 100 100', `<defs>${SHADE}<filter id="m" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="4" seed="5"/><feColorMatrix values="0 0 0 0 0.42  0 0 0 0 0.14  0 0 0 0 0.06  6 0 0 0 -2.9"/></filter></defs>
+    <circle cx="50" cy="50" r="48" fill="#BD4B2A"/><g clip-path="url(#cp)"><rect width="100" height="100" filter="url(#m)" opacity="0.7"/><ellipse cx="50" cy="5" rx="16" ry="6" fill="#F4EDE6" opacity="0.9"/></g>
+    <circle cx="50" cy="50" r="48" fill="url(#sh)"/>`) },
+  earth: { px: 128, sx: 2.083, svg: () => svg('0 0 100 100', `<defs>${SHADE}<radialGradient id="o" cx="0.4" cy="0.4" r="0.7"><stop offset="0" stop-color="#2F74CF"/><stop offset="1" stop-color="#0B2350"/></radialGradient>
+    <filter id="l" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="4" seed="8"/><feColorMatrix values="0 0 0 0 0.26  0 0 0 0 0.44  0 0 0 0 0.2  10 0 0 0 -5.2"/></filter>
+    <filter id="c" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.05 0.12" numOctaves="3" seed="2"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  8 0 0 0 -4.3"/></filter></defs>
+    <circle cx="50" cy="50" r="48" fill="url(#o)"/><g clip-path="url(#cp)"><rect width="100" height="100" filter="url(#l)"/><rect width="100" height="100" filter="url(#c)" opacity="0.75"/></g>
+    <circle cx="50" cy="50" r="47.5" fill="none" stroke="#8CC0FF" stroke-width="2" opacity="0.45"/><circle cx="50" cy="50" r="48" fill="url(#sh)"/>`) },
+  jupiter: { px: 256, sx: 2.083, svg: () => svg('0 0 100 100', `<defs>${SHADE}<filter id="b" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.015 0.09" numOctaves="3" seed="4"/><feDisplacementMap in="SourceGraphic" scale="7" xChannelSelector="R" yChannelSelector="G"/></filter></defs>
+    <g clip-path="url(#cp)"><g filter="url(#b)"><rect x="-5" y="-5" width="110" height="110" fill="#D9B38C"/>
+    ${bands([[6,8,'#B98458'],[16,6,'#EDDCBE'],[24,10,'#A86B42'],[36,8,'#F2E3C7'],[46,6,'#C99766'],[54,10,'#E8D2AE'],[66,7,'#AE7148'],[75,6,'#EBD9B8'],[83,8,'#B88454'],[92,10,'#9C6A45']], -5, 110)}
+    <ellipse cx="66" cy="70" rx="9" ry="5" fill="#B4533A"/></g></g><circle cx="50" cy="50" r="48" fill="url(#sh)"/>`) },
+  saturn: { px: 320, sx: 4, sy: 2.2, svg: () => svg('-80 -44 160 88', `<defs><radialGradient id="sh" cx="0.36" cy="0.34" r="0.78"><stop offset="0" stop-color="#fff" stop-opacity="0.2"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/><stop offset="0.78" stop-color="#000" stop-opacity="0.45"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient>
+    <clipPath id="cs"><circle r="40"/></clipPath><clipPath id="cf"><rect x="-90" y="0" width="180" height="40"/></clipPath>
+    <filter id="b" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.02 0.11" numOctaves="2" seed="9"/><feDisplacementMap in="SourceGraphic" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter></defs>
+    <g transform="rotate(-14)">${SAT_RINGS}</g>
+    <g transform="rotate(-14)"><g clip-path="url(#cs)"><g filter="url(#b)"><rect x="-45" y="-45" width="90" height="90" fill="#E6CC96"/>
+    ${bands([[-36,6,'#D4B57E'],[-26,8,'#EFDDB0'],[-14,6,'#CFAE74'],[-4,10,'#F1E2B8'],[10,6,'#D8BB85'],[20,8,'#EAD3A2'],[30,12,'#C9A86F']], -45, 90)}</g></g>
+    <circle r="40" fill="url(#sh)"/></g>
+    <g transform="rotate(-14)" clip-path="url(#cf)">${SAT_RINGS}</g>`) },
+  sun:     { px: 256, sx: 2.8, svg: () => star('#FFF8DB', '#FFD34D', '#FF9F1C', '#F26B0F', '#FFA43C', 3) },
+  redstar: { px: 256, sx: 2.8, svg: () => star('#FFE1C9', '#FF8A5C', '#E0452B', '#9E2412', '#FF5A3C', 6) },
+  bluestar:{ px: 256, sx: 2.8, svg: () => star('#FFFFFF', '#CFE3FF', '#8FB6FF', '#4F7BE8', '#8FB6FF', 9) },
+  solar: { px: 256, sx: 2.105, svg: () => { seed = 3; let pl = '';
+      const cols = ['#A9A6A0','#E3B66B','#2F74CF','#BD4B2A','#D9B38C','#E6CC96','#9BD3E0','#4F7BE8'];
+      [16, 24, 32, 40, 54, 68, 80, 92].forEach((r, i) => { const a = rnd() * Math.PI * 2; const s = i >= 4 && i <= 5 ? 4.5 : 2.6;
+        pl += `<circle r="${r}" fill="none" stroke="#fff" stroke-width="0.7" opacity="0.16"/><circle cx="${f2(r*Math.cos(a))}" cy="${f2(r*Math.sin(a))}" r="${s}" fill="${cols[i]}"/>`; });
+      return svg('-100 -100 200 200', `<defs><radialGradient id="g"><stop offset="0" stop-color="#FFF6D0"/><stop offset="0.3" stop-color="#FFC94D" stop-opacity="0.85"/><stop offset="1" stop-color="#FF8A1F" stop-opacity="0"/></radialGradient>
+        <radialGradient id="d"><stop offset="0.7" stop-color="#8FA8FF" stop-opacity="0.06"/><stop offset="1" stop-color="#8FA8FF" stop-opacity="0"/></radialGradient></defs>
+        <circle r="98" fill="url(#d)"/>${pl}<circle r="14" fill="url(#g)"/><circle r="5" fill="#FFF3C4"/>`); } },
+  nebula: { px: 256, sx: 2.22, svg: () => { seed = 17; let st = '';
+      for (let i = 0; i < 60; i++) { const r = Math.sqrt(rnd()) * 80, a = rnd() * Math.PI * 2; st += 'M' + f2(r*Math.cos(a)) + ' ' + f2(r*Math.sin(a)) + ' h0.01 '; }
+      return svg('-100 -100 200 200', `<defs><filter id="b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="13"/></filter>
+        <filter id="t" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4" seed="21"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 0.6  0 0 0 0 0.9  5 0 0 0 -2.3"/></filter>
+        <radialGradient id="m"><stop offset="0.25" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><mask id="mk"><circle r="96" fill="url(#m)"/></mask></defs>
+        <g filter="url(#b)"><ellipse cx="-22" cy="-8" rx="58" ry="40" fill="#E0559A" opacity="0.55"/><ellipse cx="26" cy="16" rx="54" ry="44" fill="#4F7BE8" opacity="0.5"/><ellipse cx="2" cy="-32" rx="36" ry="26" fill="#B46BE8" opacity="0.5"/><ellipse cx="10" cy="40" rx="30" ry="20" fill="#5FD3E8" opacity="0.35"/></g>
+        <rect x="-100" y="-100" width="200" height="200" filter="url(#t)" mask="url(#mk)" opacity="0.5"/>
+        <path d="${st}" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.85"/>`); } },
+  galaxy:  { px: 384, sx: 2.105, tilt: 0.6, svg: () => svg('-100 -100 200 200', galaxyInner(42, 'g')) },
+  galaxy2: { px: 384, sx: 2.105, tilt: 0.6, svg: () => svg('-100 -100 200 200', galaxyInner(77, 'g')) },
+  elliptical: { px: 256, sx: 2.105, svg: () => svg('-100 -100 200 200', `<defs><radialGradient id="e"><stop offset="0" stop-color="#FFF6E2"/><stop offset="0.3" stop-color="#FFDCA0" stop-opacity="0.75"/><stop offset="1" stop-color="#FFB060" stop-opacity="0"/></radialGradient></defs><ellipse rx="95" ry="62" fill="url(#e)"/>`) },
+  cluster: { px: 384, sx: 2.105, svg: () => {
+      const ells = [[0,0,34,26],[-64,-40,16,11],[54,-46,20,14],[66,46,13,10],[-40,56,18,12],[-90,18,9,7],[98,-10,8,6],[16,86,9,6],[-10,-80,10,7],[40,-92,6,4],[-70,-80,7,5],[80,80,7,5]];
+      const e = ells.map(a => `<ellipse cx="${a[0]}" cy="${a[1]}" rx="${a[2]*1.1}" ry="${a[3]*1.1}" fill="url(#e)"/>`).join('');
+      return svg('-150 -150 300 300', `<defs><radialGradient id="e"><stop offset="0" stop-color="#FFF6E2"/><stop offset="0.3" stop-color="#FFDCA0" stop-opacity="0.75"/><stop offset="1" stop-color="#FFB060" stop-opacity="0"/></radialGradient>
+        <radialGradient id="h"><stop offset="0" stop-color="#FFD9A0" stop-opacity="0.2"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/></radialGradient>
+        <g id="gx">${galaxyInner(9, 'q')}</g></defs>
+        <circle r="146" fill="url(#h)"/>${e}
+        <use href="#gx" transform="translate(-92 -92) scale(0.27)"/><use href="#gx" transform="translate(96 96) scale(0.23) rotate(70)"/><use href="#gx" transform="translate(104 -76) scale(0.16) rotate(140)"/>`); } },
+  bh_halo: { px: 384, svg: () => svg('-100 -100 200 200', `<defs><radialGradient id="h"><stop offset="0" stop-color="#FFD08A"/><stop offset="0.3" stop-color="#FF9A3D" stop-opacity="0.55"/><stop offset="0.62" stop-color="#B5420F" stop-opacity="0.18"/><stop offset="1" stop-color="#3A0D00" stop-opacity="0"/></radialGradient></defs><circle r="99" fill="url(#h)"/>`) },
+  bh_arms: { px: 512, svg: () => { const d = spiral(7, 23, 0.2, 98, 1);
+      return svg('-100 -100 200 200', `<defs><radialGradient id="mg"><stop offset="0.2" stop-color="#fff"/><stop offset="0.55" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+        <mask id="m"><rect x="-100" y="-100" width="200" height="200" fill="url(#mg)"/></mask>
+        <filter id="b4" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4"/></filter><filter id="b1" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1"/></filter></defs>
+        <g mask="url(#m)"><path d="${d}" fill="none" stroke="#FF7A1A" stroke-width="12" stroke-linecap="round" opacity="0.3" filter="url(#b4)"/>
+        <path d="${d}" fill="none" stroke="#FFB86B" stroke-width="4.5" stroke-linecap="round" opacity="0.6" filter="url(#b1)"/>
+        <path d="${d}" fill="none" stroke="#FFF4DC" stroke-width="1.3" stroke-linecap="round" opacity="0.9"/></g>`); } },
+};
+const ICONS = {
+  magnet: '<path d="M5 4h4v7a3 3 0 0 0 6 0V4h4v7a7 7 0 0 1-14 0z"/><path d="M5 8h4M15 8h4"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  freeze: '<path d="M9 5v14M15 5v14"/>',
+};
+for (const k in ICONS) {
+  TEX_DEFS['item_' + k] = { px: 128, svg: () => svg('0 0 100 100', `<circle cx="50" cy="50" r="50" fill="#38BDF8" opacity="0.25"/><circle cx="50" cy="50" r="36" fill="#0EA5E9"/><g transform="translate(32 32) scale(1.5)" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</g>`) };
+}
+TEX_DEFS.ring_ok = { px: 256, svg: () => svg('-100 -100 200 200', `<defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter></defs><circle r="92" fill="none" stroke="#A5F3FC" stroke-width="6" opacity="0.5" filter="url(#b)"/><circle r="92" fill="none" stroke="#A5F3FC" stroke-width="2.6" opacity="0.9"/>`) };
+TEX_DEFS.ring_bad = { px: 256, svg: () => svg('-100 -100 200 200', `<circle r="92" fill="none" stroke="#FB923C" stroke-width="4.5" stroke-dasharray="20.6 20.6" stroke-linecap="round"/>`) };
+const FALLBACK = { asteroid:'#8A7F72', moon:'#A9A6A0', mars:'#BD4B2A', earth:'#2F74CF', jupiter:'#D9B38C', saturn:'#E6CC96', sun:'#FFC94D', redstar:'#FF8A5C', bluestar:'#CFE3FF', solar:'#FFC94D', nebula:'#E0559A', galaxy:'#A9C1FF', galaxy2:'#A9C1FF', elliptical:'#FFDCA0', cluster:'#FFDCA0', bh_halo:'#FF9A3D', bh_arms:'#FFB86B' };
+
+const TEX = {};      // key -> canvas
+const TEX_URL = {};  // key -> data URL (HTML 화면용)
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+async function buildTextures() {
+  await Promise.all(Object.keys(TEX_DEFS).map(async key => {
+    const def = TEX_DEFS[key];
+    const s = def.svg();
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
+    TEX_URL[key] = url;
+    const ratio = (def.sy || def.sx || 1) / (def.sx || 1);
+    const c = document.createElement('canvas');
+    c.width = def.px; c.height = Math.round(def.px * ratio);
+    const ctx = c.getContext('2d');
+    try {
+      const img = await loadImg(url);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      ctx.getImageData(0, 0, 1, 1); // 캔버스가 오염됐는지 확인
+    } catch (e) {
+      ctx.clearRect(0, 0, c.width, c.height);
+      const g = ctx.createRadialGradient(c.width*0.4, c.height*0.4, 0, c.width/2, c.height/2, c.width/2);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.3, FALLBACK[key] || '#0EA5E9'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.width/2, c.height/2, Math.min(c.width, c.height)/2.2, 0, Math.PI*2); ctx.fill();
+    }
+    TEX[key] = c;
+  }));
+}
+
+// 크기에 따라 어떤 천체로 보일지 결정 (같은 단계 안에서는 실제 크기 순서)
+function pickBody(r) {
+  const v = Math.log(r / CFG.startR) / Math.log(STEP);
+  const idx = Math.floor(v) + 1, fr = v - Math.floor(v);
+  if (idx <= 0) return 'asteroid';
+  if (idx === 1) return fr < 0.4 ? 'moon' : fr < 0.7 ? 'mars' : 'earth';
+  if (idx === 2) return fr < 0.45 ? 'saturn' : 'jupiter';
+  if (idx === 3) return fr < 0.33 ? 'redstar' : fr < 0.75 ? 'sun' : 'bluestar';
+  if (idx === 4) return 'solar';
+  if (idx === 5) return 'nebula';
+  if (idx === 6) return Math.random() < 0.5 ? 'galaxy' : 'galaxy2';
+  if (idx === 7) return fr < 0.45 ? 'elliptical' : (Math.random() < 0.5 ? 'galaxy' : 'galaxy2');
+  return 'cluster';
+}
+const SPIN_TYPES = { asteroid:1, galaxy:1, galaxy2:1, elliptical:1, cluster:1, nebula:1, solar:1 };
+
+// ================= 공용 =================
+function stageIndex(r){ return Math.min(LAST, Math.max(0, Math.floor(Math.log(r/CFG.startR)/Math.log(STEP)))); }
+function stageProgress(r){ const v = Math.log(r/CFG.startR)/Math.log(STEP); return v < 0 ? 0 : v - Math.floor(v); }
+function fmt(sec){ sec = Math.max(0, Math.ceil(sec)); return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
+function fmtNum(n){ return Math.round(n).toLocaleString('ko-KR'); }
+function loadBest(){ try { return JSON.parse(localStorage.getItem('bh_best3')||'null'); } catch(e){ return null; } }
+function saveBest(b){ try { localStorage.setItem('bh_best3', JSON.stringify(b)); } catch(e){} }
+function isBetter(a, b){ if (!b) return true; if (a.cleared !== b.cleared) return a.cleared; return a.cleared ? a.time < b.time : a.r > b.r; }
+function bestHTML(b){ return b.cleared ? `최고 기록 <b class="orbit">우주 정복 ${fmt(b.time)}</b>` : `최고 기록 <b class="orbit">${b.stage}</b> (${fmtNum(b.r/CFG.startR)}배)`; }
+const ITEM_INFO = { magnet:{ name:'중력 증폭', cls:'blue', stroke:'#7DD3FC' }, shield:{ name:'보호막', cls:'green', stroke:'#86EFAC' }, freeze:{ name:'시간 정지', cls:'white', stroke:'#F4F4FB' } };
+function iconSVG(k, size, color){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`; }
+let toastTimer = null;
+function toast(small, big){
+  $('toastSmall').textContent = small; $('toastBig').textContent = big; $('toast').classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>$('toast').classList.remove('show'), 1300);
+}
+
+// 배경 별
+function drawStars(){
+  const c = $('stars'), dpr = Math.min(2, window.devicePixelRatio || 1);
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr; c.style.width = innerWidth+'px'; c.style.height = innerHeight+'px';
+  const ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+  seed = 99;
+  for (let i = 0; i < innerWidth*innerHeight/3500; i++) {
+    ctx.globalAlpha = 0.15 + rnd()*0.45; ctx.fillStyle = '#fff';
+    const s = rnd() < 0.85 ? 1 : 1.8; ctx.fillRect(rnd()*innerWidth, rnd()*innerHeight, s, s);
+  }
+}
+
+// ================= 게임 =================
+class Play extends Phaser.Scene {
+  constructor(){ super('play'); }
+  create(){
+    for (const k in TEX) if (!this.textures.exists(k)) this.textures.addCanvas(k, TEX[k]);
+    this.r = CFG.startR; this.maxR = this.r; this.elapsed = 0; this.eaten = 0;
+    this.alive = true; this.invulnUntil = 0;
+    this.magnetUntil = 0; this.freezeUntil = 0; this.shield = false;
+    this.px = 0; this.py = 0; this.armRot = 0;
+    this.objs = []; this.items = []; this.nextItemAt = CFG.itemFirst; this.lastStage = 0;
+
+    this.halo = this.add.image(0,0,'bh_halo').setDepth(8).setAlpha(0.9);
+    this.arms = this.add.image(0,0,'bh_arms').setDepth(9);
+    this.core = this.add.graphics().setDepth(10);
+
+    this.zoom = this.targetZoom();
+    this.cameras.main.setZoom(this.zoom);
+    for (let i=0;i<CFG.objCount;i++) this.spawn(true);
+    this.updateHUD(true);
+  }
+  targetZoom(){ const s = Math.min(this.scale.width, this.scale.height); return (s*0.07)/this.r; }
+  viewHalf(){ return Math.max(this.scale.width, this.scale.height)/2/this.zoom; }
+  pullR(){ return this.r * CFG.pullRange * (this.elapsed < this.magnetUntil ? CFG.magnetMult : 1); }
+
+  spawn(initial){
+    const vh = this.viewHalf();
+    const ang = Math.random()*Math.PI*2;
+    const dist = initial ? (this.r*7 + Math.random()*vh*1.4) : vh*(1.1 + Math.random()*0.6);
+    const rel = Math.random() < 0.85 ? 0.12 + Math.random()*0.7 : 1.2 + Math.random()*1.2;
+    const r = this.r*rel, type = pickBody(r), def = TEX_DEFS[type];
+    const o = { x: this.px + Math.cos(ang)*dist, y: this.py + Math.sin(ang)*dist, r, type,
+      vx:(Math.random()-.5)*this.r*0.3, vy:(Math.random()-.5)*this.r*0.3,
+      spin: SPIN_TYPES[type] ? (Math.random()-.5)*0.6 : 0 };
+    o.img = this.add.image(o.x, o.y, type).setDepth(type === 'nebula' ? 1 : 2);
+    o.img.setDisplaySize(r*def.sx, r*(def.sy || def.sx) * (def.tilt || 1));
+    if (SPIN_TYPES[type]) o.img.setRotation(Math.random()*Math.PI*2);
+    o.ring = this.add.image(o.x, o.y, 'ring_ok').setDepth(4); o.ringKey = 'ring_ok';
+    this.objs.push(o);
+  }
+
+  spawnItem(){
+    const keys = Object.keys(ITEM_INFO);
+    const type = keys[Math.floor(Math.random()*keys.length)];
+    const vh = Math.min(this.scale.width, this.scale.height)/2/this.zoom;
+    const ang = Math.random()*Math.PI*2, dist = vh*(0.45 + Math.random()*0.35);
+    const it = { type, x: this.px + Math.cos(ang)*dist, y: this.py + Math.sin(ang)*dist, r: this.r*0.55, born: this.elapsed };
+    it.img = this.add.image(it.x, it.y, 'item_'+type).setDepth(6);
+    this.items.push(it);
+  }
+  removeItem(i){ this.items[i].img.destroy(); this.items.splice(i,1); }
+  applyItem(type){
+    if (type === 'magnet') this.magnetUntil = this.elapsed + CFG.magnetSec;
+    if (type === 'shield') this.shield = true;
+    if (type === 'freeze') this.freezeUntil = this.elapsed + CFG.freezeSec;
+    toast('ITEM', ITEM_INFO[type].name);
+  }
+
+  update(time, dtMs){
+    if (!this.alive) return;
+    const dt = Math.min(dtMs, 50)/1000;
+    this.elapsed += dt;
+
+    const p = this.input.activePointer;
+    if (p.isDown){
+      const w = this.cameras.main.getWorldPoint(p.x, p.y);
+      const dx = w.x - this.px, dy = w.y - this.py, d = Math.hypot(dx,dy);
+      const maxStep = this.r*CFG.speed*dt;
+      if (d > 1){ const s = Math.min(maxStep, d); this.px += dx/d*s; this.py += dy/d*s; }
+    }
+
+    const frozen = this.elapsed < this.freezeUntil, magnet = this.elapsed < this.magnetUntil;
+    if (!frozen){ this.r *= (1 - (CFG.decayBase + this.elapsed*CFG.decayGrow)*dt); }
+
+    const vh = this.viewHalf(), pullR = this.pullR();
+    for (let i=this.objs.length-1;i>=0;i--){
+      const o = this.objs[i];
+      const dx = this.px - o.x, dy = this.py - o.y, d = Math.hypot(dx,dy);
+      const edible = o.r < this.r*0.95;
+      if (edible && d < pullR){
+        const pull = (1 - d/pullR) * this.r * 6 * dt;
+        o.x += dx/d*pull; o.y += dy/d*pull;
+      } else { o.x += o.vx*dt; o.y += o.vy*dt; }
+
+      if (edible && d < this.r){
+        this.r = Math.sqrt(this.r*this.r + CFG.growK*o.r*o.r);
+        this.eaten++;
+        o.img.destroy(); o.ring.destroy(); this.objs.splice(i,1); this.spawn(false); continue;
+      }
+      if (!edible && d < this.r + o.r*0.85 && time >= this.invulnUntil){
+        if (this.shield){ this.shield = false; toast('SHIELD', '보호막이 막았어요'); }
+        else { this.r *= CFG.hitShrink; this.cameras.main.shake(200, 0.01); }
+        this.invulnUntil = time + CFG.invulnMs;
+        const k = (this.r + o.r) / Math.max(d,0.001);
+        this.px = o.x + dx*k*1.05; this.py = o.y + dy*k*1.05;
+      }
+      if (d > vh*2.2 || o.r < this.r*0.06){ o.img.destroy(); o.ring.destroy(); this.objs.splice(i,1); this.spawn(false); continue; }
+
+      o.img.setPosition(o.x, o.y);
+      if (o.spin) o.img.rotation += o.spin*dt;
+      const want = edible ? 'ring_ok' : 'ring_bad';
+      if (o.ringKey !== want){ o.ring.setTexture(want); o.ringKey = want; }
+      const R = o.r*(edible ? 1.15 : 1.12) + (edible ? 3 : 4)/this.zoom;
+      o.ring.setPosition(o.x, o.y).setDisplaySize(R*2.17, R*2.17);
+      if (!edible) o.ring.rotation += 0.3*dt;
+    }
+
+    if (this.elapsed >= this.nextItemAt && this.items.length < 2){ this.spawnItem(); this.nextItemAt = this.elapsed + CFG.itemEvery; }
+    for (let i=this.items.length-1;i>=0;i--){
+      const it = this.items[i];
+      const dx = this.px - it.x, dy = this.py - it.y, d = Math.hypot(dx,dy);
+      if (d < pullR){ const pull = (1 - d/pullR) * this.r * 6 * dt; it.x += dx/d*pull; it.y += dy/d*pull; }
+      if (d < this.r + it.r){ this.applyItem(it.type); this.removeItem(i); continue; }
+      const age = this.elapsed - it.born;
+      if (age > CFG.itemLife || d > vh*2.5){ this.removeItem(i); continue; }
+      const pulse = 1 + Math.sin(this.elapsed*6)*0.1;
+      it.img.setPosition(it.x, it.y).setDisplaySize(it.r*2.6*pulse, it.r*2.6*pulse);
+      it.img.setAlpha(age > CFG.itemLife - 3 && Math.floor(this.elapsed*5)%2===0 ? 0.3 : 1);
+    }
+
+    this.maxR = Math.max(this.maxR, this.r);
+
+    // 블랙홀
+    this.armRot += (frozen ? 0 : 0.9) * dt;
+    this.halo.setPosition(this.px, this.py).setDisplaySize(this.r*8.5, this.r*8.5);
+    this.arms.setPosition(this.px, this.py).setDisplaySize(this.r*7.5, this.r*7.5).setRotation(this.armRot);
+    if (magnet){ this.arms.setTint(0x9ADBFF); this.halo.setTint(0x7CC8FF); }
+    else if (frozen){ this.arms.setTint(0xE5E7EB); this.halo.setTint(0xCBD5E1); }
+    else { this.arms.clearTint(); this.halo.clearTint(); }
+    const c = this.core; c.clear();
+    const blink = time < this.invulnUntil && Math.floor(time/100)%2===0;
+    c.lineStyle(this.r*0.22, 0xFFE9C2, 0.35); c.strokeCircle(this.px, this.py, this.r*1.08);
+    c.lineStyle(this.r*0.07, blink ? 0xFF6B6B : 0xFFFFFF, 1); c.strokeCircle(this.px, this.py, this.r*1.04);
+    c.fillStyle(0x000000, 1); c.fillCircle(this.px, this.py, this.r);
+    if (this.shield){ c.lineStyle(this.r*0.09, 0x4ADE80, 0.9); c.strokeCircle(this.px, this.py, this.r*1.45); }
+    if (magnet){ c.lineStyle(1.5/this.zoom, 0x7DD3FC, 0.6); c.strokeCircle(this.px, this.py, pullR); }
+
+    this.zoom += (this.targetZoom() - this.zoom) * Math.min(1, dt*2.5);
+    const cam = this.cameras.main; cam.setZoom(this.zoom); cam.centerOn(this.px, this.py);
+
+    this.updateHUD(false);
+
+    const si = stageIndex(this.r), remain = CFG.timeLimit - this.elapsed;
+    if (si === LAST) this.endGame('clear');
+    else if (this.r < CFG.startR*CFG.dieRatio) this.endGame('dead');
+    else if (remain <= 0) this.endGame('time');
+  }
+
+  updateHUD(first){
+    const si = stageIndex(this.r);
+    if (!first && si > this.lastStage){ toast('STAGE UP', STAGES[si] + ' 도달'); this.lastStage = si; }
+    $('stageName').textContent = STAGES[si];
+    $('stageNum').textContent = `${si+1} / 10 단계`;
+    $('barFill').style.width = stageProgress(this.r)*100 + '%';
+    const remain = CFG.timeLimit - this.elapsed;
+    $('time').textContent = fmt(remain);
+    $('timer').classList.toggle('low', remain <= 30);
+    $('nextText').textContent = si < LAST ? `다음 단계 · ${STAGES[si+1]}` : '';
+    let fx = '';
+    if (this.elapsed < this.magnetUntil) fx += `<span class="chip blue">${iconSVG('magnet',14,'#7DD3FC')}중력 증폭 ${Math.ceil(this.magnetUntil-this.elapsed)}초</span>`;
+    if (this.elapsed < this.freezeUntil) fx += `<span class="chip white">${iconSVG('freeze',14,'#F4F4FB')}시간 정지 ${Math.ceil(this.freezeUntil-this.elapsed)}초</span>`;
+    if (this.shield) fx += `<span class="chip green">${iconSVG('shield',14,'#86EFAC')}보호막</span>`;
+    if ($('effects').innerHTML !== fx) $('effects').innerHTML = fx;
+  }
+
+  endGame(reason){
+    this.alive = false;
+    const si = stageIndex(this.maxR);
+    const rec = { cleared: reason==='clear', time: this.elapsed, r: this.maxR, stage: STAGES[si], eaten: this.eaten, reason };
+    const best = loadBest();
+    rec.newBest = isBetter(rec, best);
+    if (rec.newBest) saveBest(rec);
+    showResult(rec, rec.newBest ? null : best);
+  }
+}
+
+// ================= 화면 전환 =================
+let game = null, lastRec = null;
+function showHUD(on){ ['hud','next'].forEach(id => $(id).classList.toggle('hidden', !on)); }
+function startGame(){
+  $('start').classList.add('hidden'); $('over').classList.add('hidden'); showHUD(true);
+  if (!game){
+    game = new Phaser.Game({ type: Phaser.AUTO, parent:'game', transparent:true,
+      scale:{ mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight }, scene: Play });
+  } else game.scene.getScene('play').scene.restart();
+}
+function showResult(rec, best){
+  lastRec = rec; showHUD(false);
+  const si = STAGES.indexOf(rec.stage);
+  const win = rec.reason === 'clear';
+  $('overEyebrow').textContent = win ? 'CLEAR' : rec.reason === 'time' ? 'TIME UP' : 'GAME OVER';
+  $('overTitle').textContent = win ? '우주를 삼켰어요' : rec.reason === 'time' ? '시간 종료' : '블랙홀이 사라졌어요';
+  $('overDesc').textContent = win ? '3분 안에 우주 전체를 삼켰어요' : `조금만 더 먹었으면 ${STAGES[Math.min(LAST, si+1)]}이었어요`;
+  $('overHero').style.opacity = win ? '1' : '0.45';
+  $('resultBox').classList.toggle('win', win);
+  $('resultLabel').textContent = win ? '클리어 시간' : '도달한 단계';
+  $('resultBig').textContent = win ? fmt(rec.time) : rec.stage;
+  $('resultSmall').textContent = win ? '' : `${si+1} / 10 단계`;
+  $('dots').innerHTML = STAGES.map((_, i) => `<div class="dot ${i <= si ? 'on' : ''}"></div>`).join('');
+  const stats = [['최대 크기', fmtNum(rec.r/CFG.startR)+'배'], ['삼킨 천체', fmtNum(rec.eaten)+'개']];
+  if (!win) stats.push(['버틴 시간', fmt(rec.time)]);
+  $('stats').style.gridTemplateColumns = `repeat(${stats.length}, minmax(0,1fr))`;
+  $('stats').innerHTML = stats.map(s => `<div class="stat"><p>${s[0]}</p><b class="orbit">${s[1]}</b></div>`).join('');
+  $('bestOver').innerHTML = rec.newBest ? '<span style="color:#FFB86B; font-weight:700">최고 기록 경신</span>' : bestHTML(best);
+  $('over').classList.remove('hidden');
+}
+
+// ================= 공유 카드 =================
+async function makeShareCard(rec){
+  try { await document.fonts.load('40px Orbit'); await document.fonts.load('700 30px "Noto Sans KR"'); } catch(e){}
+  const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#05060E'; x.fillRect(0,0,W,H);
+  seed = 7; for (let i=0;i<260;i++){ x.globalAlpha = 0.15+rnd()*0.5; x.fillStyle='#fff'; const s = rnd()<0.85?2:3.5; x.fillRect(rnd()*W, rnd()*H, s, s); }
+  x.globalAlpha = 1;
+  const cx = W/2, cy = 380, R = 300;
+  x.drawImage(TEX.bh_halo, cx-R, cy-R, R*2, R*2);
+  x.drawImage(TEX.bh_arms, cx-R*0.9, cy-R*0.9, R*1.8, R*1.8);
+  x.beginPath(); x.arc(cx, cy, R*0.25, 0, Math.PI*2); x.fillStyle='#000'; x.fill();
+  x.lineWidth = 6; x.strokeStyle = '#fff'; x.stroke();
+  const win = rec.reason === 'clear', si = STAGES.indexOf(rec.stage);
+  x.textAlign = 'center'; x.fillStyle = '#FFD9A8'; x.font = '500 34px "Noto Sans KR", sans-serif';
+  x.fillText(win ? '우주를 삼켰어요' : '내 블랙홀이 도달한 곳', cx, 760);
+  x.fillStyle = '#FFE2B8'; x.font = '130px Orbit, sans-serif';
+  x.fillText(win ? fmt(rec.time) : rec.stage, cx, 900);
+  const dotW = 760, y = 990;
+  for (let i=0;i<10;i++){ const dx = cx - dotW/2 + i*dotW/9; x.beginPath(); x.arc(dx, y, 16, 0, Math.PI*2);
+    if (i <= si){ x.fillStyle = '#FFB86B'; x.fill(); } else { x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,0.35)'; x.stroke(); } }
+  x.fillStyle = '#C9CBE3'; x.font = '400 34px "Noto Sans KR", sans-serif';
+  x.fillText(`최대 크기 ${fmtNum(rec.r/CFG.startR)}배 · 삼킨 천체 ${fmtNum(rec.eaten)}개`, cx, 1090);
+  x.fillStyle = '#A5A8C8'; x.font = '44px Orbit, sans-serif'; x.fillText('블랙홀', cx, 1230);
+  x.font = '400 28px "Noto Sans KR", sans-serif'; x.fillText('3분 안에 우주 전체를 삼켜라', cx, 1278);
+  return c;
+}
+async function openShare(){
+  if (!lastRec) return;
+  const c = await makeShareCard(lastRec);
+  $('shareImg').src = c.toDataURL('image/png');
+  $('share').classList.remove('hidden');
+  try {
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const file = new File([blob], 'blackhole.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: '블랙홀' });
+  } catch(e){}
+}
+
+// ================= 시작 =================
+drawStars();
+window.addEventListener('resize', drawStars);
+const b0 = loadBest(); if (b0) $('bestStart').innerHTML = bestHTML(b0);
+$('startBtn').onclick = startGame;
+$('retryBtn').onclick = startGame;
+$('shareBtn').onclick = openShare;
+$('shareClose').onclick = () => $('share').classList.add('hidden');
+document.addEventListener('touchmove', e => { if (!e.target.closest('.screen')) e.preventDefault(); }, { passive:false });
+buildTextures().then(() => {
+  $('heroHalo').src = $('overHalo').src = TEX_URL.bh_halo;
+  $('heroArms').src = $('overArms').src = TEX_URL.bh_arms;
+  $('ruleEarth').src = TEX_URL.earth; $('ruleJupiter').src = TEX_URL.jupiter;
+  $('itemMagnet').src = TEX_URL.item_magnet; $('itemShield').src = TEX_URL.item_shield; $('itemFreeze').src = TEX_URL.item_freeze;
+  $('startBtn').disabled = false; $('startBtn').textContent = '시작하기';
+});
+</script>
+</body>
+</html>

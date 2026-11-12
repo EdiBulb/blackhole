@@ -2,7 +2,7 @@
 
 손가락으로 블랙홀을 움직여 소행성부터 은하단까지 삼키는 모바일 웹 미니게임.
 
-**플레이:** https://edibulb.github.io/blackhole/
+**플레이:** https://blackhole.abracadelulu.com
 
 ## 규칙
 - 화면을 누른 채 끌어서 블랙홀을 이동

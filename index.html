@@ -82,6 +82,16 @@
   .stat b { display:block; margin-top:4px; font-size:19px; font-weight:400; }
   .newbest { margin:16px 0 0; font-size:14px; color:#FFB86B; font-weight:700; }
 
+  /* 콤보 */
+  #combo { position:fixed; left:0; right:0; text-align:center; pointer-events:none; opacity:0; }
+  #combo.show { opacity:1; }
+  #combo .n { font-size:34px; color:#FFE2B8; text-shadow:0 2px 10px rgba(255,138,43,0.8); display:inline-block; }
+  #combo .t { display:block; font-size:12px; letter-spacing:.2em; color:#FFD9A8; margin-top:-2px; }
+  #combo.pop .n { animation:pop .22s ease-out; }
+  @keyframes pop { 0%{ transform:scale(1.6); } 100%{ transform:scale(1); } }
+  .sound { position:fixed; top:max(14px, env(safe-area-inset-top)); right:14px; width:44px; height:44px; border-radius:50%;
+    border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.06); color:var(--text); display:flex; align-items:center; justify-content:center; z-index:5; }
+
   /* 공유 카드 */
   #share { position:fixed; inset:0; background:rgba(0,0,0,0.85); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px; box-sizing:border-box; }
   #share img { max-width:100%; max-height:70vh; border-radius:18px; -webkit-touch-callout:default; user-select:auto; -webkit-user-select:auto; }
@@ -106,9 +116,11 @@
 </div>
 <div id="next" class="hidden"><span id="nextText"></span></div>
 <div id="toast"><p id="toastSmall"></p><p id="toastBig" class="orbit"></p></div>
+<div id="combo"><span class="n orbit" id="comboN"></span><span class="t">COMBO</span></div>
 
 <!-- 시작 화면 -->
 <div id="start" class="screen">
+  <button class="sound" id="soundBtn" aria-label="소리 켜기/끄기"></button>
   <p class="eyebrow">SPACE MINI GAME</p>
   <h1 class="orbit" style="font-size:56px; letter-spacing:.04em">블랙홀</h1>
   <p class="desc">3분 안에 우주 전체를 삼켜라</p>
@@ -191,6 +203,9 @@ const CFG = {
   hitShrink: 0.8, invulnMs: 900, objCount: 140, speed: 9, pullRange: 3,
   itemEvery: 7, itemFirst: 4, itemLife: 12,
   magnetSec: 5, magnetMult: 2, freezeSec: 5,
+  comboWindow: 0.8,    // 이 시간(초) 안에 또 먹으면 콤보 유지
+  comboBonus: 0.005,   // 콤보 1당 성장 보너스 (최대 20콤보 = +10%)
+  suckTime: 0.32,      // 빨려 들어가는 연출 시간(초)
 };
 const STAGES = ['소행성','행성','항성','태양계','성운','은하','은하군','은하단','초은하단','우주 전체'];
 const STEP = 3, LAST = STAGES.length - 1;
@@ -372,6 +387,50 @@ function pickBody(r) {
 }
 const SPIN_TYPES = { asteroid:1, galaxy:1, galaxy2:1, elliptical:1, cluster:1, nebula:1, solar:1 };
 
+// ================= 사운드 & 진동 =================
+const SFX = {
+  ctx: null, on: true, lastEat: 0,
+  init(){
+    try { const v = localStorage.getItem('bh_sound'); if (v !== null) this.on = v === '1'; } catch(e){}
+  },
+  unlock(){ // 시작 버튼을 누를 때 오디오 켜기 (브라우저 정책)
+    if (!this.on) return;
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+    } catch(e){ this.ctx = null; }
+  },
+  toggle(){ this.on = !this.on; try { localStorage.setItem('bh_sound', this.on ? '1' : '0'); } catch(e){} if (this.on) this.unlock(); },
+  tone(freq, dur, type, vol, slideTo){
+    if (!this.on || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+  },
+  // 콤보가 오를수록 반음씩 높아지는 '착' 소리
+  eat(combo, big){
+    const now = performance.now(); if (now - this.lastEat < 45) return; this.lastEat = now;
+    const f = 330 * Math.pow(2, Math.min(combo - 1, 24) / 12);
+    this.tone(f, 0.09, 'triangle', 0.18, f * 1.5);
+    if (big) this.tone(90, 0.22, 'sine', 0.35, 45);
+  },
+  hit(){ this.tone(160, 0.3, 'sawtooth', 0.12, 50); },
+  item(){ [660, 880, 1320].forEach((f, i) => setTimeout(() => this.tone(f, 0.12, 'sine', 0.15), i * 60)); },
+  stage(){ [392, 523, 659, 784].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, 'triangle', 0.16), i * 70)); },
+};
+const HAPTIC = { last: 0,
+  buzz(pattern){ const now = performance.now(); if (now - this.last < 60) return; this.last = now;
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e){} } };
+SFX.init();
+function renderSoundBtn(){
+  $('soundBtn').innerHTML = SFX.on
+    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>'
+    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>';
+}
+
 // ================= 공용 =================
 function stageIndex(r){ return Math.min(LAST, Math.max(0, Math.floor(Math.log(r/CFG.startR)/Math.log(STEP)))); }
 function stageProgress(r){ const v = Math.log(r/CFG.startR)/Math.log(STEP); return v < 0 ? 0 : v - Math.floor(v); }
@@ -383,6 +442,11 @@ function isBetter(a, b){ if (!b) return true; if (a.cleared !== b.cleared) retur
 function bestHTML(b){ return b.cleared ? `최고 기록 <b class="orbit">우주 정복 ${fmt(b.time)}</b>` : `최고 기록 <b class="orbit">${b.stage}</b> (${fmtNum(b.r/CFG.startR)}배)`; }
 const ITEM_INFO = { magnet:{ name:'중력 증폭', cls:'blue', stroke:'#7DD3FC' }, shield:{ name:'보호막', cls:'green', stroke:'#86EFAC' }, freeze:{ name:'시간 정지', cls:'white', stroke:'#F4F4FB' } };
 function iconSVG(k, size, color){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`; }
+function showCombo(n){
+  const c = $('combo'); $('comboN').textContent = 'x' + n;
+  c.classList.add('show'); c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+}
+function hideCombo(){ $('combo').classList.remove('show'); }
 let toastTimer = null;
 function toast(small, big){
   $('toastSmall').textContent = small; $('toastBig').textContent = big; $('toast').classList.add('show');
@@ -411,6 +475,7 @@ class Play extends Phaser.Scene {
     this.magnetUntil = 0; this.freezeUntil = 0; this.shield = false;
     this.px = 0; this.py = 0; this.armRot = 0;
     this.objs = []; this.items = []; this.nextItemAt = CFG.itemFirst; this.lastStage = 0;
+    this.dying = []; this.combo = 0; this.maxCombo = 0; this.lastEatAt = -10;
 
     this.halo = this.add.image(0,0,'bh_halo').setDepth(8).setAlpha(0.9);
     this.arms = this.add.image(0,0,'bh_arms').setDepth(9);
@@ -441,6 +506,26 @@ class Play extends Phaser.Scene {
     this.objs.push(o);
   }
 
+  eat(o){
+    // 콤보
+    this.combo = (this.elapsed - this.lastEatAt <= CFG.comboWindow) ? this.combo + 1 : 1;
+    this.lastEatAt = this.elapsed; this.maxCombo = Math.max(this.maxCombo, this.combo);
+    const bonus = 1 + Math.min(this.combo, 20) * CFG.comboBonus;
+    this.r = Math.sqrt(this.r*this.r + CFG.growK*bonus*o.r*o.r);
+    this.eaten++;
+    // 손맛: 크기 비율에 따라 소리·진동·흔들림
+    const rel = o.r / this.r, big = rel > 0.45;
+    SFX.eat(this.combo, big);
+    if (big){ HAPTIC.buzz(28); this.cameras.main.shake(140, 0.004 + rel*0.006); }
+    else HAPTIC.buzz(8);
+    if (this.combo >= 3) showCombo(this.combo);
+    // 연출용으로 넘기기
+    o.ring.destroy();
+    const dx = o.x - this.px, dy = o.y - this.py;
+    this.dying.push({ img: o.img.setDepth(7), t: 0, dist: Math.hypot(dx, dy), ang: Math.atan2(dy, dx), w: o.img.displayWidth, h: o.img.displayHeight });
+  }
+  breakCombo(){ this.combo = 0; hideCombo(); }
+
   spawnItem(){
     const keys = Object.keys(ITEM_INFO);
     const type = keys[Math.floor(Math.random()*keys.length)];
@@ -455,7 +540,7 @@ class Play extends Phaser.Scene {
     if (type === 'magnet') this.magnetUntil = this.elapsed + CFG.magnetSec;
     if (type === 'shield') this.shield = true;
     if (type === 'freeze') this.freezeUntil = this.elapsed + CFG.freezeSec;
-    toast('ITEM', ITEM_INFO[type].name);
+    toast('ITEM', ITEM_INFO[type].name); SFX.item(); HAPTIC.buzz([15, 40, 15]);
   }
 
   update(time, dtMs){
@@ -485,13 +570,12 @@ class Play extends Phaser.Scene {
       } else { o.x += o.vx*dt; o.y += o.vy*dt; }
 
       if (edible && d < this.r){
-        this.r = Math.sqrt(this.r*this.r + CFG.growK*o.r*o.r);
-        this.eaten++;
-        o.img.destroy(); o.ring.destroy(); this.objs.splice(i,1); this.spawn(false); continue;
+        this.eat(o);
+        this.objs.splice(i,1); this.spawn(false); continue;
       }
       if (!edible && d < this.r + o.r*0.85 && time >= this.invulnUntil){
         if (this.shield){ this.shield = false; toast('SHIELD', '보호막이 막았어요'); }
-        else { this.r *= CFG.hitShrink; this.cameras.main.shake(200, 0.01); }
+        else { this.r *= CFG.hitShrink; this.cameras.main.shake(220, 0.012); SFX.hit(); HAPTIC.buzz([40, 30, 40]); this.breakCombo(); }
         this.invulnUntil = time + CFG.invulnMs;
         const k = (this.r + o.r) / Math.max(d,0.001);
         this.px = o.x + dx*k*1.05; this.py = o.y + dy*k*1.05;
@@ -506,6 +590,18 @@ class Play extends Phaser.Scene {
       o.ring.setPosition(o.x, o.y).setDisplaySize(R*2.17, R*2.17);
       if (!edible) o.ring.rotation += 0.3*dt;
     }
+
+    // 빨려 들어가는 연출: 소용돌이를 그리며 늘어나고 작아지면서 중심으로
+    for (let i=this.dying.length-1;i>=0;i--){
+      const k = this.dying[i]; k.t += dt / CFG.suckTime;
+      if (k.t >= 1){ k.img.destroy(); this.dying.splice(i,1); continue; }
+      const e = k.t*k.t, dist = k.dist * (1 - e), ang = k.ang + e * 2.4;
+      const x = this.px + Math.cos(ang)*dist, y = this.py + Math.sin(ang)*dist;
+      k.img.setPosition(x, y).setRotation(ang + Math.PI/2);
+      k.img.setDisplaySize(k.w * (1 - e*0.85) * (1 - e*0.5), k.h * (1 - e*0.85) * (1 + e*1.4));
+      k.img.setAlpha(1 - e*0.6);
+    }
+    if (this.combo > 0 && this.elapsed - this.lastEatAt > CFG.comboWindow) this.breakCombo();
 
     if (this.elapsed >= this.nextItemAt && this.items.length < 2){ this.spawnItem(); this.nextItemAt = this.elapsed + CFG.itemEvery; }
     for (let i=this.items.length-1;i>=0;i--){
@@ -541,6 +637,7 @@ class Play extends Phaser.Scene {
     const cam = this.cameras.main; cam.setZoom(this.zoom); cam.centerOn(this.px, this.py);
 
     this.updateHUD(false);
+    $('combo').style.top = (this.scale.height/2 - this.r*this.zoom*3.3 - 52) + 'px';
 
     const si = stageIndex(this.r), remain = CFG.timeLimit - this.elapsed;
     if (si === LAST) this.endGame('clear');
@@ -550,7 +647,7 @@ class Play extends Phaser.Scene {
 
   updateHUD(first){
     const si = stageIndex(this.r);
-    if (!first && si > this.lastStage){ toast('STAGE UP', STAGES[si] + ' 도달'); this.lastStage = si; }
+    if (!first && si > this.lastStage){ toast('STAGE UP', STAGES[si] + ' 도달'); this.lastStage = si; SFX.stage(); HAPTIC.buzz([30, 50, 60]); this.cameras.main.flash(250, 255, 200, 140, false); }
     $('stageName').textContent = STAGES[si];
     $('stageNum').textContent = `${si+1} / 10 단계`;
     $('barFill').style.width = stageProgress(this.r)*100 + '%';
@@ -568,7 +665,8 @@ class Play extends Phaser.Scene {
   endGame(reason){
     this.alive = false;
     const si = stageIndex(this.maxR);
-    const rec = { cleared: reason==='clear', time: this.elapsed, r: this.maxR, stage: STAGES[si], eaten: this.eaten, reason };
+    hideCombo();
+    const rec = { cleared: reason==='clear', time: this.elapsed, r: this.maxR, stage: STAGES[si], eaten: this.eaten, maxCombo: this.maxCombo, reason };
     const best = loadBest();
     rec.newBest = isBetter(rec, best);
     if (rec.newBest) saveBest(rec);
@@ -599,8 +697,7 @@ function showResult(rec, best){
   $('resultBig').textContent = win ? fmt(rec.time) : rec.stage;
   $('resultSmall').textContent = win ? '' : `${si+1} / 10 단계`;
   $('dots').innerHTML = STAGES.map((_, i) => `<div class="dot ${i <= si ? 'on' : ''}"></div>`).join('');
-  const stats = [['최대 크기', fmtNum(rec.r/CFG.startR)+'배'], ['삼킨 천체', fmtNum(rec.eaten)+'개']];
-  if (!win) stats.push(['버틴 시간', fmt(rec.time)]);
+  const stats = [['최대 크기', fmtNum(rec.r/CFG.startR)+'배'], ['삼킨 천체', fmtNum(rec.eaten)+'개'], ['최대 콤보', 'x'+rec.maxCombo]];
   $('stats').style.gridTemplateColumns = `repeat(${stats.length}, minmax(0,1fr))`;
   $('stats').innerHTML = stats.map(s => `<div class="stat"><p>${s[0]}</p><b class="orbit">${s[1]}</b></div>`).join('');
   $('bestOver').innerHTML = rec.newBest ? '<span style="color:#FFB86B; font-weight:700">최고 기록 경신</span>' : bestHTML(best);
@@ -629,7 +726,7 @@ async function makeShareCard(rec){
   for (let i=0;i<10;i++){ const dx = cx - dotW/2 + i*dotW/9; x.beginPath(); x.arc(dx, y, 16, 0, Math.PI*2);
     if (i <= si){ x.fillStyle = '#FFB86B'; x.fill(); } else { x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,0.35)'; x.stroke(); } }
   x.fillStyle = '#C9CBE3'; x.font = '400 34px "Noto Sans KR", sans-serif';
-  x.fillText(`최대 크기 ${fmtNum(rec.r/CFG.startR)}배 · 삼킨 천체 ${fmtNum(rec.eaten)}개`, cx, 1090);
+  x.fillText(`최대 크기 ${fmtNum(rec.r/CFG.startR)}배 · 삼킨 천체 ${fmtNum(rec.eaten)}개 · 최대 콤보 x${rec.maxCombo}`, cx, 1090);
   x.fillStyle = '#A5A8C8'; x.font = '44px Orbit, sans-serif'; x.fillText('블랙홀', cx, 1230);
   x.font = '400 28px "Noto Sans KR", sans-serif'; x.fillText('3분 안에 우주 전체를 삼켜라', cx, 1278);
   return c;
@@ -650,8 +747,10 @@ async function openShare(){
 drawStars();
 window.addEventListener('resize', drawStars);
 const b0 = loadBest(); if (b0) $('bestStart').innerHTML = bestHTML(b0);
-$('startBtn').onclick = startGame;
-$('retryBtn').onclick = startGame;
+$('startBtn').onclick = () => { SFX.unlock(); startGame(); };
+$('retryBtn').onclick = () => { SFX.unlock(); startGame(); };
+$('soundBtn').onclick = () => { SFX.toggle(); renderSoundBtn(); };
+renderSoundBtn();
 $('shareBtn').onclick = openShare;
 $('shareClose').onclick = () => $('share').classList.add('hidden');
 document.addEventListener('touchmove', e => { if (!e.target.closest('.screen')) e.preventDefault(); }, { passive:false });

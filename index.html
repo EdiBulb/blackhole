@@ -15,6 +15,12 @@
   #stars { position:fixed; inset:0; }
   #game { position:fixed; inset:0; }
   .hidden { display:none !important; }
+  @media (max-height: 880px) {
+    #start h1 { font-size:46px !important; }
+    #start .hero { width:170px; height:170px; margin-top:10px; }
+    #start .card { margin-top:14px; gap:9px; padding:14px 18px; }
+    #start .rule { font-size:14px; }
+  }
 
   /* HUD */
   #hud { position:fixed; top:0; left:0; right:0; padding:max(16px, env(safe-area-inset-top)) 18px 0;
@@ -82,6 +88,13 @@
   .stat b { display:block; margin-top:4px; font-size:19px; font-weight:400; }
   .newbest { margin:16px 0 0; font-size:14px; color:#FFB86B; font-weight:700; }
 
+  /* 혜성 경고 */
+  .warn { position:fixed; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%; pointer-events:none;
+    display:flex; align-items:center; justify-content:center; background:rgba(251,146,60,0.2); border:2px solid #FB923C;
+    animation:warn .3s ease-in-out infinite alternate; }
+  .warn svg { transition:none; }
+  @keyframes warn { from { opacity:.45; } to { opacity:1; } }
+
   /* 콤보 */
   #combo { position:fixed; left:0; right:0; text-align:center; pointer-events:none; opacity:0; }
   #combo.show { opacity:1; }
@@ -139,12 +152,16 @@
       <span>화면을 누른 채 끌어서 이동</span>
     </div>
     <div class="rule">
+      <div class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFD9A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h11M10 7l5 5-5 5M18 6v12M21 8v8"/></svg></div>
+      <span>손가락을 <b style="color:#FFD9A8; font-weight:500">튕기듯 놓으면 대시</b>. 크기가 조금 줄어요</span>
+    </div>
+    <div class="rule">
       <div class="ico"><div class="ring-ok"></div><img id="ruleEarth" width="24" height="24" alt=""></div>
       <span><b style="color:#A5F3FC; font-weight:500">하늘색 테두리</b>는 삼킬 수 있어요</span>
     </div>
     <div class="rule">
       <div class="ico"><div class="ring-bad"></div><img id="ruleJupiter" width="28" height="28" alt=""></div>
-      <span><b style="color:#FDBA74; font-weight:500">주황 점선</b>은 나보다 커요. 피하세요</span>
+      <span><b style="color:#FDBA74; font-weight:500">주황 점선</b>은 나보다 커요. 쫓아오거나 날아오는 것도 있어요</span>
     </div>
   </div>
   <div class="items">
@@ -206,6 +223,12 @@ const CFG = {
   comboWindow: 0.8,    // 이 시간(초) 안에 또 먹으면 콤보 유지
   comboBonus: 0.005,   // 콤보 1당 성장 보너스 (최대 20콤보 = +10%)
   suckTime: 0.32,      // 빨려 들어가는 연출 시간(초)
+  // 대시
+  flickSpeed: 900,     // 손가락을 놓기 직전 속도(px/초)가 이보다 빠르면 대시
+  dashTime: 0.22, dashSpeed: 42, dashCost: 0.95, dashCooldown: 1.2,
+  // 움직이는 위협
+  chaseRatio: 0.2, orbitRatio: 0.3, chaseSpeed: 1.8, chaseMax: 5,
+  cometFirst: 10, cometEvery: 9, cometMinEvery: 4.5, cometWarn: 0.9,
 };
 const STAGES = ['소행성','행성','항성','태양계','성운','은하','은하군','은하단','초은하단','우주 전체'];
 const STEP = 3, LAST = STAGES.length - 1;
@@ -340,6 +363,14 @@ const ICONS = {
 for (const k in ICONS) {
   TEX_DEFS['item_' + k] = { px: 128, svg: () => svg('0 0 100 100', `<circle cx="50" cy="50" r="50" fill="#38BDF8" opacity="0.25"/><circle cx="50" cy="50" r="36" fill="#0EA5E9"/><g transform="translate(32 32) scale(1.5)" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</g>`) };
 }
+TEX_DEFS.comet = { px: 360, sx: 13.6, sy: 4.5, svg: () => svg('0 0 300 100', `<defs>
+  <linearGradient id="t" x1="0" x2="1"><stop offset="0" stop-color="#7DD3FC" stop-opacity="0"/><stop offset="0.7" stop-color="#BAE6FD" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0.9"/></linearGradient>
+  <radialGradient id="h" cx="0.42" cy="0.4"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#E0F2FE"/><stop offset="1" stop-color="#7DD3FC"/></radialGradient>
+  <radialGradient id="g"><stop offset="0.4" stop-color="#BAE6FD" stop-opacity="0.7"/><stop offset="1" stop-color="#BAE6FD" stop-opacity="0"/></radialGradient>
+  <filter id="b" x="-10%" y="-50%" width="120%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+  <path d="M250 28 L10 46 Q2 50 10 54 L250 72 Z" fill="url(#t)" filter="url(#b)"/>
+  <path d="M250 40 L40 49 Q34 50 40 51 L250 60 Z" fill="url(#t)"/>
+  <circle cx="250" cy="50" r="40" fill="url(#g)"/><circle cx="250" cy="50" r="22" fill="url(#h)"/>`) };
 TEX_DEFS.ring_ok = { px: 256, svg: () => svg('-100 -100 200 200', `<defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter></defs><circle r="92" fill="none" stroke="#A5F3FC" stroke-width="6" opacity="0.5" filter="url(#b)"/><circle r="92" fill="none" stroke="#A5F3FC" stroke-width="2.6" opacity="0.9"/>`) };
 TEX_DEFS.ring_bad = { px: 256, svg: () => svg('-100 -100 200 200', `<circle r="92" fill="none" stroke="#FB923C" stroke-width="4.5" stroke-dasharray="20.6 20.6" stroke-linecap="round"/>`) };
 const FALLBACK = { asteroid:'#8A7F72', moon:'#A9A6A0', mars:'#BD4B2A', earth:'#2F74CF', jupiter:'#D9B38C', saturn:'#E6CC96', sun:'#FFC94D', redstar:'#FF8A5C', bluestar:'#CFE3FF', solar:'#FFC94D', nebula:'#E0559A', galaxy:'#A9C1FF', galaxy2:'#A9C1FF', elliptical:'#FFDCA0', cluster:'#FFDCA0', bh_halo:'#FF9A3D', bh_arms:'#FFB86B' };
@@ -418,6 +449,19 @@ const SFX = {
     if (big) this.tone(90, 0.22, 'sine', 0.35, 45);
   },
   hit(){ this.tone(160, 0.3, 'sawtooth', 0.12, 50); },
+  noise(dur, f0, f1, vol){
+    if (!this.on || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime, n = Math.floor(c.sampleRate * dur);
+    const buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource(), bp = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = buf; bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp).connect(g).connect(c.destination); src.start(t);
+  },
+  dash(){ this.noise(0.25, 600, 3000, 0.35); },
+  comet(){ this.noise(0.9, 300, 1400, 0.18); },
   item(){ [660, 880, 1320].forEach((f, i) => setTimeout(() => this.tone(f, 0.12, 'sine', 0.15), i * 60)); },
   stage(){ [392, 523, 659, 784].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, 'triangle', 0.16), i * 70)); },
 };
@@ -476,6 +520,11 @@ class Play extends Phaser.Scene {
     this.px = 0; this.py = 0; this.armRot = 0;
     this.objs = []; this.items = []; this.nextItemAt = CFG.itemFirst; this.lastStage = 0;
     this.dying = []; this.combo = 0; this.maxCombo = 0; this.lastEatAt = -10;
+    this.dashUntil = 0; this.dashReadyAt = 0; this.dashDir = { x: 0, y: 0 }; this.ghosts = []; this.ghostAt = 0;
+    this.nextCometAt = CFG.cometFirst; this.warnings = []; this.trail = [];
+    this.input.on('pointermove', p => this.track(p));
+    this.input.on('pointerdown', p => { this.trail = []; this.track(p); });
+    this.input.on('pointerup', p => this.tryDash(p));
 
     this.halo = this.add.image(0,0,'bh_halo').setDepth(8).setAlpha(0.9);
     this.arms = this.add.image(0,0,'bh_arms').setDepth(9);
@@ -503,6 +552,66 @@ class Play extends Phaser.Scene {
     o.img.setDisplaySize(r*def.sx, r*(def.sy || def.sx) * (def.tilt || 1));
     if (SPIN_TYPES[type]) o.img.setRotation(Math.random()*Math.PI*2);
     o.ring = this.add.image(o.x, o.y, 'ring_ok').setDepth(4); o.ringKey = 'ring_ok';
+    // 나보다 큰 천체 일부는 움직이게: 쫓아오기 / 궤도 돌기
+    if (rel > 1){
+      const roll = Math.random();
+      if (roll < CFG.chaseRatio) o.beh = 'chase';
+      else if (roll < CFG.chaseRatio + CFG.orbitRatio){
+        o.beh = 'orbit'; o.cx = o.x; o.cy = o.y; o.orR = r*(1.6 + Math.random()*1.6);
+        o.orA = Math.random()*Math.PI*2; o.orW = (Math.random() < 0.5 ? -1 : 1)*(0.5 + Math.random()*0.5);
+      }
+    }
+    this.objs.push(o);
+    return o;
+  }
+
+  // ---- 대시: 손가락을 튕기듯 놓으면 그 방향으로 돌진 ----
+  track(p){
+    const now = performance.now();
+    this.trail.push({ x: p.x, y: p.y, t: now });
+    while (this.trail.length && now - this.trail[0].t > 150) this.trail.shift();
+  }
+  tryDash(p){
+    if (!this.alive) return;
+    this.track(p);
+    const a = this.trail[0], b = this.trail[this.trail.length - 1];
+    this.trail = [];
+    if (!a || b.t - a.t < 16) return;
+    const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy);
+    const speed = dist / ((b.t - a.t) / 1000);
+    if (dist < 30 || speed < CFG.flickSpeed || this.elapsed < this.dashReadyAt) return;
+    this.dashDir = { x: dx / dist, y: dy / dist };
+    this.dashUntil = this.elapsed + CFG.dashTime;
+    this.dashReadyAt = this.elapsed + CFG.dashCooldown;
+    this.r *= CFG.dashCost;
+    SFX.dash(); HAPTIC.buzz(18);
+  }
+
+  // ---- 혜성: 경고 후 화면을 가로질러 날아옴 ----
+  warnComet(){
+    const ang = Math.random()*Math.PI*2;
+    const el = document.createElement('div'); el.className = 'warn';
+    el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FB923C" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 6v8M12 18h.01"/></svg>';
+    document.body.appendChild(el);
+    this.warnings.push({ ang, el, at: this.elapsed + CFG.cometWarn });
+    SFX.comet(); HAPTIC.buzz([10, 60, 10]);
+  }
+  placeWarning(w){
+    const W = this.scale.width, H = this.scale.height, m = 34;
+    const cx = W/2, cy = H/2, dx = Math.cos(w.ang), dy = Math.sin(w.ang);
+    const t = Math.min((cx - m) / Math.abs(dx || 1e-6), (cy - m - 60) / Math.abs(dy || 1e-6));
+    w.el.style.left = (cx + dx*t) + 'px'; w.el.style.top = (cy + dy*t) + 'px';
+  }
+  launchComet(ang){
+    const vh = this.viewHalf();
+    const r = this.r*(1.3 + Math.random()*0.8), def = TEX_DEFS.comet;
+    const sx = this.px + Math.cos(ang)*vh*1.25, sy = this.py + Math.sin(ang)*vh*1.25;
+    const aim = Math.atan2(this.py - sy, this.px - sx) + (Math.random() - 0.5)*0.25;
+    const sp = vh*1.15;
+    const o = { x: sx, y: sy, r, type: 'comet', beh: 'comet', vx: Math.cos(aim)*sp, vy: Math.sin(aim)*sp, spin: 0 };
+    o.img = this.add.image(sx, sy, 'comet').setDepth(3).setOrigin(250/300, 0.5).setRotation(aim);
+    o.img.setDisplaySize(r*def.sx, r*def.sy);
+    o.ring = this.add.image(sx, sy, 'ring_ok').setDepth(4); o.ringKey = 'ring_ok';
     this.objs.push(o);
   }
 
@@ -548,8 +657,16 @@ class Play extends Phaser.Scene {
     const dt = Math.min(dtMs, 50)/1000;
     this.elapsed += dt;
 
+    const dashing = this.elapsed < this.dashUntil;
     const p = this.input.activePointer;
-    if (p.isDown){
+    if (dashing){
+      const s = this.r*CFG.dashSpeed*dt; this.px += this.dashDir.x*s; this.py += this.dashDir.y*s;
+      if (this.elapsed >= this.ghostAt){ // 잔상
+        this.ghostAt = this.elapsed + 0.03;
+        const g = this.add.image(this.px, this.py, 'bh_arms').setDepth(7).setAlpha(0.45).setRotation(this.armRot).setDisplaySize(this.r*5, this.r*5);
+        this.ghosts.push({ img: g, t: 0 });
+      }
+    } else if (p.isDown){
       const w = this.cameras.main.getWorldPoint(p.x, p.y);
       const dx = w.x - this.px, dy = w.y - this.py, d = Math.hypot(dx,dy);
       const maxStep = this.r*CFG.speed*dt;
@@ -567,20 +684,29 @@ class Play extends Phaser.Scene {
       if (edible && d < pullR){
         const pull = (1 - d/pullR) * this.r * 6 * dt;
         o.x += dx/d*pull; o.y += dy/d*pull;
+      } else if (o.beh === 'comet'){
+        o.x += o.vx*dt; o.y += o.vy*dt;
+      } else if (o.beh === 'orbit' && !edible){
+        o.cx += o.vx*dt; o.cy += o.vy*dt; o.orA += o.orW*dt;
+        o.x = o.cx + Math.cos(o.orA)*o.orR; o.y = o.cy + Math.sin(o.orA)*o.orR;
+      } else if (o.beh === 'chase' && !edible && d < vh*1.2 && this.elapsed >= (o.restUntil || 0)){
+        const sp = this.r*CFG.chaseSpeed*dt; o.x += dx/d*sp; o.y += dy/d*sp;
+        o.chaseT = (o.chaseT || 0) + dt; if (o.chaseT > CFG.chaseMax) o.beh = null; // 한참 쫓다가 포기
       } else { o.x += o.vx*dt; o.y += o.vy*dt; }
 
       if (edible && d < this.r){
         this.eat(o);
-        this.objs.splice(i,1); this.spawn(false); continue;
+        this.objs.splice(i,1); if (o.beh !== 'comet') this.spawn(false); continue;
       }
       if (!edible && d < this.r + o.r*0.85 && time >= this.invulnUntil){
+        o.restUntil = this.elapsed + 2.5;
         if (this.shield){ this.shield = false; toast('SHIELD', '보호막이 막았어요'); }
         else { this.r *= CFG.hitShrink; this.cameras.main.shake(220, 0.012); SFX.hit(); HAPTIC.buzz([40, 30, 40]); this.breakCombo(); }
         this.invulnUntil = time + CFG.invulnMs;
         const k = (this.r + o.r) / Math.max(d,0.001);
         this.px = o.x + dx*k*1.05; this.py = o.y + dy*k*1.05;
       }
-      if (d > vh*2.2 || o.r < this.r*0.06){ o.img.destroy(); o.ring.destroy(); this.objs.splice(i,1); this.spawn(false); continue; }
+      if (d > vh*(o.beh === 'comet' ? 2.6 : 2.2) || o.r < this.r*0.06){ o.img.destroy(); o.ring.destroy(); this.objs.splice(i,1); if (o.beh !== 'comet') this.spawn(false); continue; }
 
       o.img.setPosition(o.x, o.y);
       if (o.spin) o.img.rotation += o.spin*dt;
@@ -588,7 +714,29 @@ class Play extends Phaser.Scene {
       if (o.ringKey !== want){ o.ring.setTexture(want); o.ringKey = want; }
       const R = o.r*(edible ? 1.15 : 1.12) + (edible ? 3 : 4)/this.zoom;
       o.ring.setPosition(o.x, o.y).setDisplaySize(R*2.17, R*2.17);
-      if (!edible) o.ring.rotation += 0.3*dt;
+      if (!edible){
+        const chasing = o.beh === 'chase' && d < vh*1.2;
+        o.ring.rotation += (chasing ? 1.4 : 0.3)*dt;
+        if (chasing){ const pz = 1 + Math.sin(this.elapsed*8)*0.05; o.ring.setDisplaySize(R*2.17*pz, R*2.17*pz); }
+      }
+    }
+
+    // 잔상 사라지기
+    for (let i=this.ghosts.length-1;i>=0;i--){
+      const g = this.ghosts[i]; g.t += dt/0.25;
+      if (g.t >= 1){ g.img.destroy(); this.ghosts.splice(i,1); continue; }
+      g.img.setAlpha(0.45*(1 - g.t));
+    }
+
+    // 혜성: 경고 → 발사
+    if (this.elapsed >= this.nextCometAt){
+      this.warnComet();
+      this.nextCometAt = this.elapsed + Math.max(CFG.cometMinEvery, CFG.cometEvery - this.elapsed/30) * (0.8 + Math.random()*0.4);
+    }
+    for (let i=this.warnings.length-1;i>=0;i--){
+      const w = this.warnings[i];
+      if (this.elapsed >= w.at){ w.el.remove(); this.warnings.splice(i,1); this.launchComet(w.ang); continue; }
+      this.placeWarning(w);
     }
 
     // 빨려 들어가는 연출: 소용돌이를 그리며 늘어나고 작아지면서 중심으로
@@ -632,6 +780,11 @@ class Play extends Phaser.Scene {
     c.fillStyle(0x000000, 1); c.fillCircle(this.px, this.py, this.r);
     if (this.shield){ c.lineStyle(this.r*0.09, 0x4ADE80, 0.9); c.strokeCircle(this.px, this.py, this.r*1.45); }
     if (magnet){ c.lineStyle(1.5/this.zoom, 0x7DD3FC, 0.6); c.strokeCircle(this.px, this.py, pullR); }
+    if (this.elapsed < this.dashReadyAt){ // 대시 재사용 대기 표시
+      const left = (this.dashReadyAt - this.elapsed) / CFG.dashCooldown;
+      c.lineStyle(this.r*0.06, 0xFFD9A8, 0.7); c.beginPath();
+      c.arc(this.px, this.py, this.r*1.26, -Math.PI/2, -Math.PI/2 + Math.PI*2*(1 - left)); c.strokePath();
+    }
 
     this.zoom += (this.targetZoom() - this.zoom) * Math.min(1, dt*2.5);
     const cam = this.cameras.main; cam.setZoom(this.zoom); cam.centerOn(this.px, this.py);
@@ -664,6 +817,7 @@ class Play extends Phaser.Scene {
 
   endGame(reason){
     this.alive = false;
+    this.warnings.forEach(w => w.el.remove()); this.warnings = [];
     const si = stageIndex(this.maxR);
     hideCombo();
     const rec = { cleared: reason==='clear', time: this.elapsed, r: this.maxR, stage: STAGES[si], eaten: this.eaten, maxCombo: this.maxCombo, reason };
